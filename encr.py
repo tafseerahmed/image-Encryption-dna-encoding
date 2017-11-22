@@ -27,13 +27,17 @@ dna["00"]="A"
 dna["01"]="T"
 dna["10"]="G"
 dna["11"]="C"
+dna["A"]=[0,0]
+dna["T"]=[0,1]
+dna["G"]=[1,0]
+dna["C"]=[1,1]
 #DNA xor
 dna["AA"]=dna["TT"]=dna["GG"]=dna["CC"]="A"
 dna["AG"]=dna["GA"]=dna["TC"]=dna["CT"]="G"
 dna["AC"]=dna["CA"]=dna["GT"]=dna["TG"]="C"
 dna["AT"]=dna["TA"]=dna["CG"]=dna["GC"]="T"
 # Maximum time point and total number of time points
-tmax, N = 1, 10000
+tmax, N = 100, 10000
 
 def lorenz(X, t, a, b, c):
     x, y, z = X
@@ -115,6 +119,7 @@ def dna_encode(b,g,r,key):
     b = np.unpackbits(b,axis=1)
     g = np.unpackbits(g,axis=1)
     r = np.unpackbits(r,axis=1)
+    print(b)
     m,n = b.shape
     r_enc= np.chararray((m,int(n/2)))
     g_enc= np.chararray((m,int(n/2)))
@@ -175,9 +180,10 @@ def gen_chaos_seq(m,n):
     y= np.array((m,n*4))
     z= np.array((m,n*4))
     t = np.linspace(0, tmax, N)
+    #print((x0, y0, z0),"\n",t,"\n",a,b,c,end="\n")
     f = odeint(lorenz, (x0, y0, z0), t, args=(a, b, c))
     x, y, z = f.T
-    print(len(x),m*n*4)
+    #print(len(x),m*n*4)
     x=x[:(N)]
     y=y[:(N)]
     z=z[:(N)]
@@ -189,11 +195,11 @@ def plot(x,y,z):
     fig = plt.figure()
     ax = fig.gca(projection='3d')
     # Make the line multi-coloured by plotting it in segments of length s which
-    # change in colour across the whole time series.
-    s = 10
-    c = np.linspace(0,1,n)
-    for i in range(0,n-s,s):
-        ax.plot(x[i:i+s+1], y[i:i+s+1], z[i:i+s+1], color=(1,c[i],0), alpha=0.4)
+    # change in colour across the whole time series.    
+    s = 100
+    c = np.linspace(0,1,N)
+    for i in range(0,N-s,s):
+        ax.plot(x[i:i+s+1], y[i:i+s+1], z[i:i+s+1], color=(1-c[i],c[i],1), alpha=0.4)
     # Remove all the axis clutter, leaving just the curve.
     ax.set_axis_off()
     plt.show()
@@ -209,7 +215,7 @@ def sequence_indexing(x,y,z):
             t = var[k1]
             k2 = bsearch(seq, t, 0, len(seq))
             func[k1]=int(k2)            
-    print(fx,fy,fz,"\n",len(fx),len(fy),len(fz))
+    #print(fx,fy,fz,"\n",len(fx),len(fy),len(fz))
     return fx,fy,fz
         
 def scramble(fx,fy,fz,b,r,g):
@@ -220,7 +226,7 @@ def scramble(fx,fy,fz,b,r,g):
     gx=g.reshape(size).astype(str)
     rx=r.reshape(size).astype(str)
 
-    print("scramble:oooo ",size,len(fx))
+    #print("scramble:oooo ",size,len(fx))
     bx_s=np.chararray((size))
     gx_s=np.chararray((size))
     rx_s=np.chararray((size))
@@ -251,6 +257,30 @@ def scramble(fx,fy,fz,b,r,g):
     print(b_s,"\n","\n",g_s,"\n","\n",r_s,"\n","-----------------")
     return b_s,g_s,r_s
 
+def dna_decode(b,g,r):
+    m,n = b.shape
+    r_dec= np.ndarray((m,int(n*2)),dtype=np.uint8)
+    g_dec= np.ndarray((m,int(n*2)),dtype=np.uint8)
+    b_dec= np.ndarray((m,int(n*2)),dtype=np.uint8)
+    for color,dec in zip((b,g,r),(b_dec,g_dec,r_dec)):
+        idx=0
+        for j in range(0,m):
+            for i in range(0,n):
+                dec[j,2*i]=dna["{0}".format(color[j,i])][0]
+                dec[j,2*i+1]=dna["{0}".format(color[j,i])][1]
+    b_dec=(np.packbits(b_dec,axis=-1))
+    g_dec=(np.packbits(g_dec,axis=-1))
+    r_dec=(np.packbits(r_dec,axis=-1))
+    return b_dec,g_dec,r_dec
+
+def encrypted_image(b,g,r,iname):
+    img = cv2.imread(iname)
+    print(iname)
+    img[:,:,2] = r
+    img[:,:,1] = g
+    img[:,:,0] = b
+    cv2.imwrite(("enc.jpg"), img)
+
 #program exec9
 if (__name__ == "__main__"):
     reload(sys)  
@@ -259,11 +289,10 @@ if (__name__ == "__main__"):
     update_lorentz(key)
     blue,green,red=decompose_matrix(file_path)
     blue_e,green_e,red_e,Mk_e=dna_encode(blue,green,red,key)
-
     blue_final, green_final, red_final = xor_operation(blue_e,green_e,red_e,Mk_e)
     x,y,z=gen_chaos_seq(m,n)
-    
-    #plot(x,y,z)
+    plot(x,y,z)
     fx,fy,fz=sequence_indexing(x,y,z)
     blue_scrambled,green_scrambled,red_scrambled = scramble(fx,fy,fz,blue_final,red_final,green_final)
-    
+    b,g,r=dna_decode(blue_scrambled,green_scrambled,red_scrambled)
+    encrypted_image(b,g,r,file_path)
