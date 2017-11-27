@@ -9,7 +9,6 @@ import numpy as np
 from scipy.integrate import odeint
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-# encoding=utf8  
 import sys
 from importlib import reload  
 from bisect import bisect_left as bsearch
@@ -97,11 +96,12 @@ def update_lorentz (key):
     x0=x0 + t1/256            
     y0=y0 + t2/256            
     z0=z0 + t3/256            
-    print("{0} {1} {2}".format(x0,y0,z0))
 
 def decompose_matrix(iname):
     image = cv2.imread(iname)
     blue,green,red = split_into_rgb_channels(image)
+    
+    print("blue :",blue,"green :",green,"red :",red,"\n\n\n")
     for values, channel in zip((red, green, blue), (2,1,0)):
         img = np.zeros((values.shape[0], values.shape[1]), dtype = np.uint8)
         img[:,:] = (values)
@@ -111,33 +111,37 @@ def decompose_matrix(iname):
             G = np.asmatrix(img)
         else:
             R = np.asmatrix(img)
-    print(blue.shape,'\n',blue,'\n')
     return B,G,R
 
-def dna_encode(b,g,r,key):
+def dna_encode(b,g,r):
     
     b = np.unpackbits(b,axis=1)
     g = np.unpackbits(g,axis=1)
     r = np.unpackbits(r,axis=1)
-    print(b)
     m,n = b.shape
     r_enc= np.chararray((m,int(n/2)))
     g_enc= np.chararray((m,int(n/2)))
     b_enc= np.chararray((m,int(n/2)))
     
-    print (b,m,n,'\n','\n',b.shape,b_enc.shape)
     for color,enc in zip((b,g,r),(b_enc,g_enc,r_enc)):
         idx=0
         for j in range(0,m):
             for i in range(0,n,2):
-                #print("({0},{1}) ".format(idx,i))
                 enc[j,idx]=dna["{0}{1}".format(color[j,i],color[j,i+1])]
                 idx+=1
                 if (i==n-2):
                     idx=0
                     break
     
+    b_enc=b_enc.astype(str)
+    g_enc=g_enc.astype(str)
+    r_enc=r_enc.astype(str)
+    return b_enc,g_enc,r_enc
+
+def key_matrix_encode(key,b):    
     #encoded key matrix
+    b = np.unpackbits(b,axis=1)
+    m,n = b.shape
     key_bin = bin(int(key, 16))[2:].zfill(256)
     Mk = np.zeros((m,n),dtype=np.uint8)
     x=0
@@ -154,23 +158,26 @@ def dna_encode(b,g,r,key):
                 idx=0
             Mk_enc[j,idx]=dna["{0}{1}".format(Mk[j,i],Mk[j,i+1])]
             idx+=1
-    b_enc=b_enc.astype(str)
-    g_enc=g_enc.astype(str)
-    r_enc=r_enc.astype(str)
     Mk_enc=Mk_enc.astype(str)
-    return b_enc,g_enc,r_enc,Mk_enc
+    return Mk_enc
 
 def xor_operation(b,g,r,mk):
     m,n = b.shape
     bx=np.chararray((m,n))
     gx=np.chararray((m,n))
     rx=np.chararray((m,n))
-    
+    b=b.astype(str)
+    g=g.astype(str)
+    r=r.astype(str)
     for i in range(0,m):
         for j in range (0,n):
             bx[i,j] = dna["{0}{1}".format(b[i,j],mk[i,j])]
             gx[i,j] = dna["{0}{1}".format(g[i,j],mk[i,j])]
             rx[i,j] = dna["{0}{1}".format(r[i,j],mk[i,j])]
+         
+    bx=bx.astype(str)
+    gx=gx.astype(str)
+    rx=rx.astype(str)
     return bx,gx,rx 
 
 def gen_chaos_seq(m,n):
@@ -180,53 +187,51 @@ def gen_chaos_seq(m,n):
     y= np.array((m,n*4))
     z= np.array((m,n*4))
     t = np.linspace(0, tmax, N)
-    #print((x0, y0, z0),"\n",t,"\n",a,b,c,end="\n")
     f = odeint(lorenz, (x0, y0, z0), t, args=(a, b, c))
     x, y, z = f.T
-    #print(len(x),m*n*4)
     x=x[:(N)]
     y=y[:(N)]
     z=z[:(N)]
-    print(x,y,z)
     return x,y,z
 
 def plot(x,y,z):
-    # Plot the Lorenz attractor using a Matplotlib 3D projection
     fig = plt.figure()
     ax = fig.gca(projection='3d')
-    # Make the line multi-coloured by plotting it in segments of length s which
-    # change in colour across the whole time series.    
     s = 100
     c = np.linspace(0,1,N)
     for i in range(0,N-s,s):
         ax.plot(x[i:i+s+1], y[i:i+s+1], z[i:i+s+1], color=(1-c[i],c[i],1), alpha=0.4)
-    # Remove all the axis clutter, leaving just the curve.
     ax.set_axis_off()
     plt.show()
 
 def sequence_indexing(x,y,z):
     n=len(x)
-    fx=np.empty((n),dtype=np.uint8)
-    fy=np.empty((n),dtype=np.uint8)
-    fz=np.empty((n),dtype=np.uint8)
-    for func, var in zip((fx,fy,fz),(x,y,z)):
-        seq=sorted(var)
-        for k1 in range(0,n):
-            t = var[k1]
-            k2 = bsearch(seq, t, 0, len(seq))
-            func[k1]=int(k2)            
-    #print(fx,fy,fz,"\n",len(fx),len(fy),len(fz))
+    fx=np.zeros((n),dtype=np.uint32)
+    fy=np.zeros((n),dtype=np.uint32)
+    fz=np.zeros((n),dtype=np.uint32)
+    seq=sorted(x)
+    for k1 in range(0,n):
+            t = x[k1]
+            k2 = bsearch(seq, t)
+            fx[k1]=k2
+    seq=sorted(y)
+    for k1 in range(0,n):
+            t = y[k1]
+            k2 = bsearch(seq, t)
+            fy[k1]=k2
+    seq=sorted(z)
+    for k1 in range(0,n):
+            t = z[k1]
+            k2 = bsearch(seq, t)
+            fz[k1]=k2
     return fx,fy,fz
         
 def scramble(fx,fy,fz,b,r,g):
     p,q=b.shape
     size = p*q
-     
     bx=b.reshape(size).astype(str)
     gx=g.reshape(size).astype(str)
     rx=r.reshape(size).astype(str)
-
-    #print("scramble:oooo ",size,len(fx))
     bx_s=np.chararray((size))
     gx_s=np.chararray((size))
     rx_s=np.chararray((size))
@@ -244,7 +249,43 @@ def scramble(fx,fy,fz,b,r,g):
     gx_s=gx_s.astype(str)
     rx_s=rx_s.astype(str)
     
-    print(bx,"\n scramble: ",bx_s)        
+    b_s=np.chararray((p,q))
+    g_s=np.chararray((p,q))
+    r_s=np.chararray((p,q))
+
+    b_s=bx_s.reshape(p,q)
+    g_s=gx_s.reshape(p,q)
+    r_s=rx_s.reshape(p,q)
+    return b_s,g_s,r_s
+
+def scramble_new(fx,fy,fz,b,g,r):
+    p,q=b.shape
+    size = p*q
+    bx=b.reshape(size)
+    gx=g.reshape(size)
+    rx=r.reshape(size)
+
+    bx_s=b.reshape(size)
+    gx_s=g.reshape(size)
+    rx_s=r.reshape(size)
+    
+    bx=bx.astype(str)
+    gx=gx.astype(str)
+    rx=rx.astype(str)
+    bx_s=bx_s.astype(str)
+    gx_s=gx_s.astype(str)
+    rx_s=rx_s.astype(str)
+    
+    for i in range(size):
+            idx = fz[i]
+            bx_s[idx] = bx[i]
+    for i in range(size):
+            idx = fy[i]
+            gx_s[idx] = gx[i]
+    for i in range(size):
+            idx = fx[i]
+            rx_s[idx] = rx[i]    
+
     b_s=np.chararray((p,q))
     g_s=np.chararray((p,q))
     r_s=np.chararray((p,q))
@@ -253,9 +294,8 @@ def scramble(fx,fy,fz,b,r,g):
     g_s=gx_s.reshape(p,q)
     r_s=rx_s.reshape(p,q)
 
-    print(b.astype(str),"\n","\n",g.astype(str),"\n","\n",r.astype(str),"\n","-----------------")
-    print(b_s,"\n","\n",g_s,"\n","\n",r_s,"\n","-----------------")
     return b_s,g_s,r_s
+
 
 def dna_decode(b,g,r):
     m,n = b.shape
@@ -263,7 +303,6 @@ def dna_decode(b,g,r):
     g_dec= np.ndarray((m,int(n*2)),dtype=np.uint8)
     b_dec= np.ndarray((m,int(n*2)),dtype=np.uint8)
     for color,dec in zip((b,g,r),(b_dec,g_dec,r_dec)):
-        idx=0
         for j in range(0,m):
             for i in range(0,n):
                 dec[j,2*i]=dna["{0}".format(color[j,i])][0]
@@ -273,26 +312,64 @@ def dna_decode(b,g,r):
     r_dec=(np.packbits(r_dec,axis=-1))
     return b_dec,g_dec,r_dec
 
-def encrypted_image(b,g,r,iname):
+def xor_operation_new(b,g,r,mk):
+    m,n = b.shape
+    bx=np.chararray((m,n))
+    gx=np.chararray((m,n))
+    rx=np.chararray((m,n))
+    b=b.astype(str)
+    g=g.astype(str)
+    r=r.astype(str)
+    for i in range(0,m):
+        for j in range (0,n):
+            bx[i,j] = dna["{0}{1}".format(b[i,j],mk[i,j])]
+            gx[i,j] = dna["{0}{1}".format(g[i,j],mk[i,j])]
+            rx[i,j] = dna["{0}{1}".format(r[i,j],mk[i,j])]
+         
+    bx=bx.astype(str)
+    gx=gx.astype(str)
+    rx=rx.astype(str)
+    return bx,gx,rx 
+
+def recover_image(b,g,r,iname):
     img = cv2.imread(iname)
-    print(iname)
     img[:,:,2] = r
     img[:,:,1] = g
     img[:,:,0] = b
     cv2.imwrite(("enc.jpg"), img)
+    print("saved ecrypted image as enc.jpg")
+    return img
+
+def decrypt(image,fx,fy,fz,fp,Mk,bt,gt,rt):
+    r,g,b=split_into_rgb_channels(image)
+    p,q = rt.shape
+    benc,genc,renc=dna_encode(b,g,r)
+    bs,gs,rs=scramble_new(fx,fy,fz,benc,genc,renc)
+    bx,rx,gx=xor_operation_new(bs,gs,rs,Mk)
+    blue,green,red=dna_decode(bx,gx,rx)
+    green,red = red, green
+    img=np.zeros((p,q,3),dtype=np.uint8)
+    img[:,:,0] = red
+    img[:,:,1] = green
+    img[:,:,2] = blue
+    cv2.imwrite(("Recovered.jpg"), img)
+    
 
 #program exec9
 if (__name__ == "__main__"):
-    reload(sys)  
     file_path = image_selector()
+    print(file_path)
     key,m,n = securekey(file_path)
     update_lorentz(key)
     blue,green,red=decompose_matrix(file_path)
-    blue_e,green_e,red_e,Mk_e=dna_encode(blue,green,red,key)
+    blue_e,green_e,red_e=dna_encode(blue,green,red)
+    Mk_e = key_matrix_encode(key,blue)
     blue_final, green_final, red_final = xor_operation(blue_e,green_e,red_e,Mk_e)
     x,y,z=gen_chaos_seq(m,n)
-    plot(x,y,z)
     fx,fy,fz=sequence_indexing(x,y,z)
     blue_scrambled,green_scrambled,red_scrambled = scramble(fx,fy,fz,blue_final,red_final,green_final)
     b,g,r=dna_decode(blue_scrambled,green_scrambled,red_scrambled)
-    encrypted_image(b,g,r,file_path)
+    img=recover_image(b,g,r,file_path)
+
+    print("decrypting...")
+    decrypt(img,fx,fy,fz,file_path,Mk_e,blue,green,red)
