@@ -100,8 +100,6 @@ def update_lorentz (key):
 def decompose_matrix(iname):
     image = cv2.imread(iname)
     blue,green,red = split_into_rgb_channels(image)
-    
-    print("blue :",blue,"green :",green,"red :",red,"\n\n\n")
     for values, channel in zip((red, green, blue), (2,1,0)):
         img = np.zeros((values.shape[0], values.shape[1]), dtype = np.uint8)
         img[:,:] = (values)
